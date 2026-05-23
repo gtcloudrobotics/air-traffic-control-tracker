@@ -1,0 +1,20 @@
+{
+  "id": 1,
+  "name": "Nominal — easy",
+  "description": "Baseline sanity check. Both sensors healthy the whole run. Your tracker must publish at >=40 Hz and stay within 25 m RMSE. If you fail here, nothing else will pass.",
+  "checks": "RMSE < 25 m, output rate >= 40 Hz",
+  "duration_s": 20,
+  "aircraft": [
+    {
+      "id": "AC001",
+      // Straight horizontal pass — nothing tricky. Consistent heading means
+      // Kalman converges fast and RMSE should settle well under 25 m within
+      // the first few seconds.
+      "waypoints": [
+        {"t": 0,  "pos": [-2000, 0, 1000]},
+        {"t": 20, "pos": [ 2000, 0, 1000]}  // 200 m/s, both sensors healthy throughout
+      ]
+    }
+  ],
+  "faults": []
+}

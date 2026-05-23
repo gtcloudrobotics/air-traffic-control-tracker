@@ -1,0 +1,24 @@
+{
+  "id": 2,
+  "name": "GPS transponder killed",
+  "description": "Tests degraded-mode handling. GPS transponder dies permanently at t=10 s. Your tracker must keep publishing on radar alone — no TRACK_LOST while radar is live. Checks that you don't over-rely on GPS and that losing one sensor doesn't crash the other.",
+  "checks": "No TRACK_LOST while radar is live. Post-fault RMSE < 60 m.",
+  "duration_s": 25,
+  "aircraft": [
+    {
+      "id": "AC001",
+      // Straight trajectory intentional: radar (σ=15 m) on a straight path
+      // should hold RMSE comfortably under 60 m. Curving would stress the
+      // Kalman velocity estimate and make the RMSE threshold trickier to set.
+      "waypoints": [
+        {"t": 0,  "pos": [-2000, 500, 1200]},
+        {"t": 25, "pos": [ 2000, 500, 1200]}  // ~160 m/s
+      ]
+    }
+  ],
+  "faults": [
+    // GPS dies permanently at t=10. Slot keeps returning the last observation
+    // it ever wrote — that frozen timestamp is what the tracker must detect.
+    {"type": "kill_sensor", "sensor": "gps", "at_t": 10}
+  ]
+}

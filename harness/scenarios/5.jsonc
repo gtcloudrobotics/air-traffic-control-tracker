@@ -1,0 +1,22 @@
+{
+  "id": 5,
+  "name": "GPS transponder jittered ±100 ms",
+  "description": "Tests that your staleness threshold is not too tight. GPS transponder frames arrive with up to ±100 ms of timing jitter on top of the normal 200 ms gap — worst case ~300 ms between frames. Your tracker must NOT trigger TRACK_LOST. Jittery-but-present is not stale.",
+  "checks": "No TRACK_LOST. RMSE < 25 m. Threshold must tolerate ~300 ms GPS gaps.",
+  "duration_s": 20,
+  "aircraft": [
+    {
+      "id": "AC001",
+      "waypoints": [
+        {"t": 0,  "pos": [-2000, 0, 800]},
+        {"t": 20, "pos": [ 2000, 0, 800]}
+      ]
+    }
+  ],
+  // gps_jitter_s adds ±jitter to each GPS frame's real-time sleep.
+  // At ±100 ms on a 200 ms base period, worst-case gap is ~300 ms.
+  // stale_gps_after_s = 5 / gps_hz = 1.0 s comfortably covers this.
+  // If students use a tighter multiplier (e.g. 2x = 0.4 s), this scenario fails.
+  "gps_jitter_s": 0.1,
+  "faults": []
+}

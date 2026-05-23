@@ -1,0 +1,26 @@
+{
+  "id": 3,
+  "name": "Radar killed, then resumed",
+  "description": "Tests degraded mode AND recovery. Radar dies at t=8 s (GPS-only for 6 s), then comes back at t=14 s. Your tracker must survive the gap on GPS alone without declaring TRACK_LOST, then re-fuse radar when it returns. Checks that you don't latch in lost mode after recovery.",
+  "checks": "No TRACK_LOST during t=8-14 s gap. Post-recovery RMSE < 30 m.",
+  "duration_s": 25,
+  "aircraft": [
+    {
+      "id": "AC001",
+      // Turn at t=10 fires inside the radar-dead window (t=8–14).
+      // GPS (σ=2 m) should track the maneuver cleanly, so this won't affect
+      // the RMSE threshold — it just makes the visualization more interesting:
+      // students can see a tight ellipsoid following the curve vs the coasting
+      // behavior they'd see with a straight path.
+      "waypoints": [
+        {"t": 0,  "pos": [-1500, -300, 900]},
+        {"t": 10, "pos": [  100, -300, 900]},  // radar dead since t=8; still going straight
+        {"t": 25, "pos": [  700, 1200, 900]}   // sharp turn at t=10 during GPS-only window
+      ]
+    }
+  ],
+  "faults": [
+    {"type": "kill_sensor",   "sensor": "radar", "at_t": 8},
+    {"type": "resume_sensor", "sensor": "radar", "at_t": 14}
+  ]
+}

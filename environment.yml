@@ -1,0 +1,10 @@
+name: atc-tracker
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy>=1.24
+  - pip
+  - pip:
+      - websockets>=12.0

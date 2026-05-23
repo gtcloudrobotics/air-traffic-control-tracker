@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Air Traffic Control — Tracker Visualization</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #010a01; color: #8fcf8f; font-family: monospace; overflow: hidden; }
+    #canvas { display: block; }
+    #hud {
+      position: fixed; top: 12px; left: 12px;
+      background: rgba(0,8,0,0.7); padding: 10px 14px;
+      border: 1px solid #1a4a1a; border-radius: 4px;
+      font-size: 13px; line-height: 1.7;
+      pointer-events: none;
+    }
+    #hud .label  { color: #3a7a3a; }
+    #hud .val    { color: #aaffaa; }
+    #hud .lost   { color: #ff4444; font-weight: bold; }
+    #hud .ok     { color: #00ff41; }
+    #legend {
+      position: fixed; bottom: 12px; left: 12px;
+      background: rgba(0,8,0,0.7); padding: 8px 14px;
+      border: 1px solid #1a4a1a; border-radius: 4px;
+      font-size: 12px; line-height: 1.8;
+    }
+    .dot { display: inline-block; width: 10px; height: 10px;
+           border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    #scenario-name {
+      position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+      color: #3a7a3a; font-family: monospace; font-size: 12px;
+      letter-spacing: 0.08em; pointer-events: none;
+    }
+    #sensor-strip {
+      position: fixed; top: 48px; right: 12px;
+      background: rgba(0,8,0,0.7); padding: 8px 14px;
+      border: 1px solid #1a4a1a; border-radius: 4px;
+      font-family: monospace; font-size: 13px; line-height: 2;
+      pointer-events: none;
+    }
+    .s-row { display: flex; align-items: center; gap: 8px; }
+    .s-label { color: #3a7a3a; width: 58px; }
+    .s-dot { font-size: 10px; }
+    .s-age { color: #aaffaa; min-width: 70px; }
+    .fresh  { color: #00ff41; }
+    .aging  { color: #aaff00; }
+    .stale  { color: #ff4444; }
+    .unseen { color: #3a7a3a; }
+    #pause-msg {
+      position: fixed; top: 12px; right: 12px;
+      background: rgba(0,8,0,0.7); padding: 6px 12px;
+      border: 1px solid #1a4a1a; border-radius: 4px;
+      color: #00ff41; font-family: monospace; font-size: 13px;
+      pointer-events: none;
+    }
+    #pause-msg.hidden { display: none; }
+    #cov-panel {
+      position: fixed; bottom: 12px; right: 12px;
+      background: rgba(0,8,0,0.7); padding: 8px 14px;
+      border: 1px solid #1a4a1a; border-radius: 4px;
+      font-family: monospace; font-size: 11px; pointer-events: none;
+    }
+    #cov-panel .ch-title { color: #3a7a3a; letter-spacing: 0.1em; margin-bottom: 4px; }
+    #cov-panel .ch-legend { display: flex; gap: 14px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="scenario-name"></div>
+<div id="sensor-strip">
+  <div style="color:#3a7a3a; font-size:11px; letter-spacing:0.1em; margin-bottom:4px;">SENSOR FRESHNESS</div>
+  <div class="s-row">
+    <span class="s-label">RADAR <span style="color:#1a4a1a">50Hz</span></span>
+    <span class="s-dot unseen" id="s-radar-dot">●</span>
+    <span class="s-age unseen" id="s-radar-age">no data</span>
+  </div>
+  <div class="s-row">
+    <span class="s-label">GPS <span style="color:#1a4a1a">5Hz</span></span>
+    <span class="s-dot unseen" id="s-gps-dot">●</span>
+    <span class="s-age unseen" id="s-gps-age">no data</span>
+  </div>
+</div>
+<div id="pause-msg">PAUSED — press S to start</div>
+<div id="hud">
+  <div><span class="label">t  </span> <span class="val" id="h-t">—</span></div>
+  <div><span class="label">status  </span> <span id="h-status">—</span></div>
+  <div><span class="label">error  </span> <span class="val" id="h-err">—</span></div>
+  <div><span class="label">σ_x σ_y σ_z  </span> <span class="val" id="h-cov">—</span></div>
+</div>
+<div id="legend">
+  <div><span class="dot" style="background:#fff"></span> ground truth</div>
+  <div><span class="dot" style="background:#4af"></span> estimated track</div>
+</div>
+<div id="cov-panel">
+  <div class="ch-title">POSITION UNCERTAINTY (1σ)</div>
+  <canvas id="cov-chart" width="220" height="72"></canvas>
+  <div class="ch-legend">
+    <span style="color:#00cc44">σ_pos (mean)</span>
+    <span style="color:#0d3d0d">── 25 m</span>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── scene setup ──────────────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x010a01);
+scene.fog = new THREE.Fog(0x010a01, 8000, 18000);
+
+const camera = new THREE.PerspectiveCamera(55, 1, 1, 30000);
+camera.position.set(0, 2500, 5500);
+camera.lookAt(0, 1000, 0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+// ground grid — radar scope green
+const grid = new THREE.GridHelper(8000, 40, 0x0d3d0d, 0x061806);
+grid.position.y = 0;
+scene.add(grid);
+
+// axes — dim green tint
+scene.add(new THREE.AxesHelper(300));
+
+// lighting — green-tinted ambient keeps the scope feel
+scene.add(new THREE.AmbientLight(0x80ff80, 0.25));
+const sun = new THREE.DirectionalLight(0xaaffaa, 0.5);
+sun.position.set(3000, 5000, 4000);
+scene.add(sun);
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ── trail helpers ─────────────────────────────────────────────────────────────
+const TRAIL = 100;
+
+function makeTrail(color) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(TRAIL * 3);
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setDrawRange(0, 0);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, opacity: 0.6, transparent: true }));
+  scene.add(line);
+  const pts = [];
+  return { line, pts };
+}
+
+function pushTrail(trail, x, y, z) {
+  trail.pts.push(x, y, z);
+  if (trail.pts.length > TRAIL * 3) trail.pts.splice(0, 3);
+  const arr = trail.line.geometry.attributes.position.array;
+  arr.set(trail.pts);
+  trail.line.geometry.setDrawRange(0, trail.pts.length / 3);
+  trail.line.geometry.attributes.position.needsUpdate = true;
+}
+
+const truthTrail    = makeTrail(0xffffff);
+const estimateTrail = makeTrail(0x44aaff);
+
+// ── point markers ─────────────────────────────────────────────────────────────
+function makeMarker(color, radius = 30) {
+  const mesh = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 16, 16),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.4 })
+  );
+  scene.add(mesh);
+  return mesh;
+}
+
+const truthMarker    = makeMarker(0xffffff, 25);
+const estimateMarker = makeMarker(0x44aaff, 25);
+
+// ── uncertainty chart ─────────────────────────────────────────────────────────
+const COV_N = 220;
+const covHist = [];
+const covCanvas = document.getElementById('cov-chart');
+const covCtx = covCanvas.getContext('2d');
+
+function drawCovChart() {
+  const W = covCanvas.width, H = covCanvas.height;
+  covCtx.fillStyle = '#010a01';
+  covCtx.fillRect(0, 0, W, H);
+  if (covHist.length < 2) return;
+
+  const peak = Math.max(...covHist, 1);
+
+  // dim reference line at 25 m
+  const refY = H * (1 - 25 / peak);
+  covCtx.strokeStyle = '#0d3d0d';
+  covCtx.lineWidth = 1;
+  covCtx.beginPath(); covCtx.moveTo(0, refY); covCtx.lineTo(W, refY); covCtx.stroke();
+
+  covCtx.strokeStyle = '#00cc44';
+  covCtx.lineWidth = 1.5;
+  covCtx.beginPath();
+  covHist.forEach((v, i) => {
+    const x = (i / (COV_N - 1)) * W;
+    const y = H * (1 - v / peak);
+    i === 0 ? covCtx.moveTo(x, y) : covCtx.lineTo(x, y);
+  });
+  covCtx.stroke();
+}
+
+function pushCov(sx, sy, sz) {
+  covHist.push((sx + sy + sz) / 3);
+  if (covHist.length > COV_N) covHist.shift();
+  drawCovChart();
+}
+
+// ── HUD elements ──────────────────────────────────────────────────────────────
+const hT      = document.getElementById('h-t');
+const hStatus = document.getElementById('h-status');
+const hErr    = document.getElementById('h-err');
+const hCov    = document.getElementById('h-cov');
+
+// ── sensor strip ──────────────────────────────────────────────────────────────
+const scenarioName = document.getElementById('scenario-name');
+const sRadarDot = document.getElementById('s-radar-dot');
+const sRadarAge = document.getElementById('s-radar-age');
+const sGpsDot   = document.getElementById('s-gps-dot');
+const sGpsAge   = document.getElementById('s-gps-age');
+
+// Viz-only colour thresholds — does not affect student code.
+// Radar: 50 Hz (20 ms gap normal). GPS: 5 Hz (200 ms gap normal).
+// GPS warn is set BELOW the normal gap so it briefly goes yellow
+// before each new fix arrives — makes the 5 Hz rhythm visible in scenario 1.
+const RADAR_WARN_S = 0.04;   // > 40 ms (2× normal): unusual
+const RADAR_DEAD_S = 0.15;   // > 150 ms: almost certainly dead
+const GPS_WARN_S   = 0.14;   // > 140 ms: approaching next fix — visible yellow pulse
+const GPS_DEAD_S   = 0.40;   // > 400 ms: two missed fixes — dead
+
+function updateSensor(dot, age, ageVal, warnThresh, deadThresh) {
+  if (ageVal === null || ageVal === undefined) {
+    dot.className = 's-dot unseen'; age.className = 's-age unseen';
+    age.textContent = 'no data'; return;
+  }
+  const ms = Math.round(ageVal * 1000);
+  age.textContent = ms < 1000 ? `${ms} ms ago` : `${(ageVal).toFixed(1)} s ago`;
+  if (ageVal > deadThresh) {
+    dot.className = 's-dot stale'; age.className = 's-age stale';
+  } else if (ageVal > warnThresh) {
+    dot.className = 's-dot aging'; age.className = 's-age aging';
+  } else {
+    dot.className = 's-dot fresh'; age.className = 's-age fresh';
+  }
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+const ws = new WebSocket('ws://localhost:8765');
+
+ws.onmessage = ({ data }) => {
+  const f = JSON.parse(data);
+
+  // scenario + sensor strip
+  if (f.scenario) scenarioName.textContent = `Scenario: ${f.scenario}`;
+  updateSensor(sRadarDot, sRadarAge, f.radar_age_s, RADAR_WARN_S, RADAR_DEAD_S);
+  updateSensor(sGpsDot,  sGpsAge,   f.gps_age_s,   GPS_WARN_S,   GPS_DEAD_S);
+
+  // truth
+  const [tx, ty, tz] = f.truth;
+  truthMarker.position.set(tx, tz, -ty);   // three.js: Y=up, sim: Z=up
+  pushTrail(truthTrail, tx, tz, -ty);
+
+  hT.textContent = f.t.toFixed(2) + ' s';
+
+  if (f.status === 'no_output' || !f.pos) {
+    estimateMarker.visible = false;
+    const label = f.status === 'track_lost' ? 'TRACK_LOST' : 'no output yet';
+    hStatus.textContent = label;
+    hStatus.className = 'lost';
+    hErr.textContent = '—';
+    hCov.textContent = '—';
+    return;
+  }
+
+  hStatus.textContent = 'tracking';
+  hStatus.className = 'ok';
+
+  const [ex, ey, ez] = f.pos;
+  estimateMarker.visible = true;
+  estimateMarker.position.set(ex, ez, -ey);
+  pushTrail(estimateTrail, ex, ez, -ey);
+
+  const err = Math.sqrt((tx-ex)**2 + (ty-ey)**2 + (tz-ez)**2);
+  hErr.textContent = err.toFixed(1) + ' m';
+
+  if (f.cov_diag) {
+    const [sx, sy, sz] = f.cov_diag.map(v => Math.sqrt(Math.max(v, 0)));
+    pushCov(sx, sy, sz);
+    hCov.textContent = `${sx.toFixed(0)} ${sy.toFixed(0)} ${sz.toFixed(0)} m`;
+  }
+};
+
+ws.onerror = () => console.warn('[viz] WebSocket not connected — run with --visualize');
+
+// ── pause / resume ────────────────────────────────────────────────────────────
+const pauseMsg = document.getElementById('pause-msg');
+let paused = true;
+
+document.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() !== 's') return;
+  paused = !paused;
+  pauseMsg.textContent = paused ? 'PAUSED — press S to resume' : 'RUNNING — press S to pause';
+  pauseMsg.classList.toggle('hidden', !paused);
+  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ cmd: 'toggle' }));
+});
+
+// ── render loop ───────────────────────────────────────────────────────────────
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

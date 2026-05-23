@@ -1,0 +1,28 @@
+{
+  "id": 7,
+  "name": "Radar-only through a turn",
+  "description": "Tests radar-only tracking under dynamics. GPS transponder dies at t=5 s; the aircraft makes a sharp turn at t=15 s while radar is the only surviving sensor. Radar is noisy (σ=15 m) so the uncertainty ellipsoid will visibly grow and shift during the maneuver. Your tracker must keep publishing without declaring TRACK_LOST for the full run.",
+  "checks": "No TRACK_LOST. Post-turn RMSE < 80 m.",
+  "duration_s": 30,
+  "aircraft": [
+    {
+      "id": "AC001",
+      // GPS dies early (t=5) so the tracker is fully settled into radar-only
+      // mode well before the turn at t=15. The turn is the interesting part:
+      // radar (σ=15 m) tracking a direction change vs GPS (σ=2 m) doing the
+      // same. RMSE threshold is 80 m (vs 60 m in scenario 2) to account for
+      // the higher noise and filter lag during the maneuver.
+      "waypoints": [
+        {"t": 0,  "pos": [-2000,    0, 1000]},
+        {"t": 15, "pos": [  500,    0, 1000]},  // ~167 m/s rightward; GPS dead since t=5
+        {"t": 30, "pos": [ 1100, 1500, 1000]}   // sharp turn at t=15; radar alone must track
+      ]
+    }
+  ],
+  "faults": [
+    // Kill GPS early so the interesting part (the turn) is entirely radar-only.
+    // If GPS were alive through the turn the filter would just nail it (σ=2 m)
+    // and students wouldn't see the noise difference.
+    {"type": "kill_sensor", "sensor": "gps", "at_t": 5}
+  ]
+}

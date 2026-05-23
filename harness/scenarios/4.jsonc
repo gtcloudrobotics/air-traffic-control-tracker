@@ -1,0 +1,30 @@
+{
+  "id": 4,
+  "name": "All sensors killed",
+  "description": "Tests total failure detection. Radar dies at t=10 s, GPS transponder at t=11 s. Your tracker must publish TRACK_LOST within your freshness window after both are gone — not keep coasting on a stale confident estimate. Checks that you know when you don't know.",
+  "checks": "TRACK_LOST declared within 2 s of both sensors dying (by t=13 s).",
+  "duration_s": 20,
+  "aircraft": [
+    {
+      "id": "AC001",
+      // Turn fires at t=11 — exactly when GPS is killed and both sensors are dead.
+      // From t=11 the estimate coasts rightward while truth curves upward, giving
+      // a visible divergence before TRACK_LOST fires (~t=12). Good for the viz.
+      //
+      // NOTE: GPS was originally killed at t=12, but that put TRACK_LOST right
+      // on the grader deadline (t=14). GPS runs its own real-time counter; if
+      // the harness ticks slow down under load, GPS timestamps drift ahead and
+      // TRACK_LOST fires at t=14.02 — just outside the window. Killing GPS at
+      // t=11 gives a full second of slack (deadline is now t=13).
+      "waypoints": [
+        {"t": 0,  "pos": [-1000,   0, 1100]},
+        {"t": 11, "pos": [  100,   0, 1100]},  // both sensors dead by this waypoint
+        {"t": 20, "pos": [  500, 900, 1100]}   // aircraft turns while estimate coasts straight
+      ]
+    }
+  ],
+  "faults": [
+    {"type": "kill_sensor", "sensor": "radar", "at_t": 10},
+    {"type": "kill_sensor", "sensor": "gps",   "at_t": 11}
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "id": 6,
+  "name": "Interface swap — different sensor rates",
+  "description": "Tests interface discipline. Radar runs at 10 Hz instead of 50 Hz; GPS runs at 1 Hz instead of 5 Hz. A tracker that hardcodes staleness thresholds based on the default rates will immediately declare sensors dead on a healthy flight. Derive your thresholds from config.radar_hz and config.gps_hz, not from magic numbers.",
+  "checks": "RMSE < 25 m, output rate >= 40 Hz with slower sensors.",
+  "duration_s": 20,
+  // radar_hz / gps_hz override the defaults (50 / 5). Passed into TrackerConfig
+  // so config.radar_hz and config.gps_hz reflect the actual rates. Any threshold
+  // hardcoded to e.g. 0.2 s (= 10/50Hz) will immediately fire as stale here.
+  "radar_hz": 10,
+  "gps_hz": 1,
+  "aircraft": [
+    {
+      "id": "AC001",
+      "waypoints": [
+        {"t": 0,  "pos": [-1800, 400, 1300]},
+        {"t": 20, "pos": [ 1800, 400, 1300]}
+      ]
+    }
+  ],
+  "faults": []
+}
