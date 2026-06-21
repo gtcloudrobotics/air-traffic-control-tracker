@@ -23,6 +23,14 @@ class Tracker:
         self.stale_radar_after_s = 10 / config.radar_hz
         self.stale_gps_after_s = 5 / config.gps_hz
 
+    def _fuse(self, obs):
+        if self.track_estimated_state is None:
+            self.track_estimated_state = self.kalman.init_from_obs(obs)
+        else:
+            dt = max(0.0, obs.t - self.track_estimated_state.t)
+            self.track_estimated_state = self.kalman.predict(self.track_estimated_state, dt)
+            self.track_estimated_state = self.kalman.update(self.track_estimated_state, obs)
+
     def tick(self, now_s: float):
         """Called at 50 Hz by the harness. now_s is the current sim time.
 
@@ -39,8 +47,32 @@ class Tracker:
         radar_obs = self.radar_slot.read()
         gps_obs = self.gps_slot.read()
 
-        # TODO: implement this method.
-        pass
+        new_obs = []
+        if radar_obs is not None and (self.last_radar_t is None or radar_obs.t > self.last_radar_t):
+            new_obs.append(radar_obs)
+            self.last_radar_t = radar_obs.t
+        if gps_obs is not None and (self.last_gps_t is None or gps_obs.t > self.last_gps_t):
+            new_obs.append(gps_obs)
+            self.last_gps_t = gps_obs.t
+
+        for obs in sorted(new_obs, key=lambda o: o.t):
+            self._fuse(obs)
+
+        radar_ok = self.last_radar_t is not None and now_s - self.last_radar_t <= self.stale_radar_after_s
+        gps_ok = self.last_gps_t is not None and now_s - self.last_gps_t <= self.stale_gps_after_s
+
+        if not radar_ok and not gps_ok:
+            if self.track_estimated_state is not None:
+                self.output_slot.write(TrackedState(
+                    t=now_s, pos=self.track_estimated_state.pos, vel=self.track_estimated_state.vel,
+                    cov=self.track_estimated_state.cov, status=TRACK_LOST,
+                ))
+            return
+
+        if self.track_estimated_state is not None:
+            if now_s > self.track_estimated_state.t:
+                self.track_estimated_state = self.kalman.predict(self.track_estimated_state, now_s - self.track_estimated_state.t)
+            self.output_slot.write(self.track_estimated_state)
 
 
 # --- Part 2: interface design ---
